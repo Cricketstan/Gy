@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fancode Match Player</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css" />
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.polyfilled.js"></script>
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -19,11 +22,19 @@ header.scrolled { background-color: rgba(0,0,0,0.6); }
 .logo img { height:100%; width:auto; display:block; }
 
 .player-wrapper { padding-top:70px; max-width:960px; margin:auto; }
-iframe { width:100%; aspect-ratio:16/9; border:none; border-radius:10px; }
+#plyr-player { width:100%; aspect-ratio:16/9; border-radius:10px; background:#000; }
 
-.match-details { background: rgba(0,0,0,0.7); padding:15px; border-radius:10px; margin-top:10px; }
+.match-details {
+  background: rgba(0,0,0,0.85); padding:15px; border-radius:10px; margin-top:10px;
+  font-weight:bold; font-size:1.1rem; text-shadow: 0 0 6px #ff4500, 0 0 10px #ff4500, 0 0 20px #ff4500;
+  color: #fff;
+}
 .match-details p { margin:5px 0; }
-.live-badge { display:inline-block; background:red; color:#fff; padding:2px 8px; border-radius:4px; font-weight:bold; margin-left:10px; font-size:0.9rem;}
+
+.live-badge {
+  display:inline-block; background:red; color:#fff; padding:2px 8px; border-radius:4px; font-weight:bold;
+  margin-left:10px; font-size:0.9rem; text-shadow: 0 0 4px #fff, 0 0 6px red;
+}
 
 .action-buttons { display:flex; justify-content:space-around; margin-top:15px; gap:10px; }
 .action-buttons button {
@@ -42,7 +53,7 @@ iframe { width:100%; aspect-ratio:16/9; border:none; border-radius:10px; }
 </header>
 
 <div class="player-wrapper">
-  <iframe id="playerFrame" src="" allowfullscreen></iframe>
+  <video id="plyr-player" playsinline controls></video>
 
   <div class="action-buttons">
     <button id="favBtn"><i class="material-icons">favorite_border</i>Favourite</button>
@@ -56,42 +67,26 @@ iframe { width:100%; aspect-ratio:16/9; border:none; border-radius:10px; }
 
 <script>
 const urlParams = new URLSearchParams(window.location.search);
-const matchUrl = urlParams.get('url'); // dai_url
-const matchNameParam = urlParams.get('matchName');
-
-const playerFrame = document.getElementById('playerFrame');
+const matchUrl = urlParams.get('url');
+const video = document.getElementById('plyr-player');
 const matchDetailsDiv = document.getElementById('matchDetails');
 const favBtn = document.getElementById('favBtn');
 
-// Set iframe source to your external player
-if(matchUrl){
-  playerFrame.src = `https://allrounderlive.pages.dev/player?url=${encodeURIComponent(matchUrl)}`;
-}
-
-// Load match details
 async function loadMatchDetails(){
   try {
     const res = await fetch('https://raw.githubusercontent.com/Odfinity/live-events/refs/heads/main/fancode/data.json');
     const data = await res.json();
-    const match = data.matches.find(m => (m.dai_url === matchUrl || m.adfree_url === matchUrl));
+    const match = data.matches.find(m => m.dai_url === matchUrl || m.adfree_url === matchUrl);
+
     if(!match){
       matchDetailsDiv.innerHTML = '<p style="color:red;">Match not found.</p>';
       return;
     }
 
-    matchDetailsDiv.innerHTML = `
-      <p><strong>${match.team_1}</strong> vs <strong>${match.team_2}</strong>
-      ${match.status.toLowerCase() === 'live' ? '<span class="live-badge">LIVE</span>' : ''}</p>
-      <p>Event: ${match.event_name}</p>
-      <p>Status: ${match.status}</p>
-      <p>Start: ${match.startTime}</p>
-    `;
-
-    // Favourite button
     const favKey = `favMatch-${match.id}`;
-    const updateFavBtn = ()=>{
+    const updateFavBtn = () => {
       const isFav = localStorage.getItem(favKey) === 'true';
-      favBtn.innerHTML = isFav 
+      favBtn.innerHTML = isFav
         ? '<i class="material-icons" style="color:red">favorite</i>Favourite'
         : '<i class="material-icons">favorite_border</i>Favourite';
     };
@@ -102,22 +97,58 @@ async function loadMatchDetails(){
       updateFavBtn();
     };
 
-    // Share button
     document.getElementById('shareBtn').onclick = async ()=>{
       if(navigator.share){
-        navigator.share({
-          title: `Watch ${match.team_1} vs ${match.team_2}`,
-          text: 'Check out this match!',
-          url: window.location.href
-        });
+        navigator.share({ title:`Watch ${match.team_1} vs ${match.team_2}`, text:'Check out this match!', url: window.location.href });
       } else alert('Share not supported on this browser.');
     };
-
-    // Watch More
     document.getElementById('watchMoreBtn').onclick = ()=> window.open('https://allrounderlive.pages.dev/','_blank');
-
-    // Join Now
     document.getElementById('joinNowBtn').onclick = ()=> window.open('https://t.me/+KOnGKXbcSBszNWY1','_blank');
+
+    // Plyr + HLS
+    if(Hls.isSupported()){
+      const hls = new Hls();
+      hls.loadSource(matchUrl);
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, function(){
+        const qualities = hls.levels.map(l=>l.height).filter((v,i,a)=>a.indexOf(v)===i);
+
+        const player = new Plyr(video, {
+          controls: [
+            'play-large','restart','rewind','play','fast-forward','progress','current-time','duration','mute','volume','captions','settings','pip','fullscreen'
+          ],
+          settings:['quality','speed','loop'],
+          quality:{
+            default: qualities[qualities.length-1],
+            options: qualities,
+            forced: true,
+            onChange: (newQuality)=>{
+              const idx = hls.levels.findIndex(l=>l.height===newQuality);
+              hls.currentLevel = idx;
+            }
+          },
+          autoplay: true
+        });
+
+        // Show live time dynamically
+        setInterval(()=>{
+          const now = new Date();
+          const hours = now.getHours().toString().padStart(2,'0');
+          const minutes = now.getMinutes().toString().padStart(2,'0');
+          matchDetailsDiv.innerHTML = `
+            <p><strong>${match.team_1}</strong> vs <strong>${match.team_2}</strong>
+            ${match.status.toLowerCase() === 'live' ? '<span class="live-badge">LIVE</span>' : ''}</p>
+            <p>Event: ${match.event_name}</p>
+            <p>Status: ${match.status}</p>
+            <p>Time: ${hours}:${minutes} IST</p>
+          `;
+        },1000);
+      });
+    } else {
+      video.src = matchUrl;
+      new Plyr(video, { autoplay:true });
+    }
 
   } catch(err){
     console.error(err);
@@ -134,5 +165,6 @@ window.addEventListener('scroll', () => {
   else header.classList.remove('scrolled');
 });
 </script>
+
 </body>
 </html>
