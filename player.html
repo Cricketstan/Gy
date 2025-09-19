@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fancode Match Player</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css" />
+<!-- Google Material Icons -->
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#000; font-family:Arial,sans-serif; color:#fff; }
+  
+  header {
+    position: fixed; top:0; left:0; width:100%; height:60px;
+    background:rgba(0,0,0,1); display:flex; align-items:center;
+    z-index:1000; border-bottom:1px solid rgba(255,255,255,0.5);
+  }
+  header.scrolled { background-color: rgba(0,0,0,0.6); }
+  .logo { height:80%; display:flex; align-items:center; margin-left:0; }
+  .logo img { height:100%; width:auto; display:block; }
+
+  .player-wrapper { padding-top:70px; max-width:960px; margin:auto; }
+  video { aspect-ratio:16/9; width:100%; border-radius:10px; }
+
+  .match-details {
+    background: rgba(0,0,0,0.7); padding:15px; border-radius:10px; margin-top:10px;
+  }
+  .match-details p { margin:5px 0; }
+  .live-badge { display:inline-block; background:red; color:#fff; padding:2px 8px; border-radius:4px; font-weight:bold; margin-left:10px; font-size:0.9rem;}
+
+  .action-buttons {
+    display:flex; justify-content:space-around; margin-top:15px; gap:10px;
+  }
+  .action-buttons button {
+    flex:1;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:8px 0; font-size:14px; font-weight:bold; color:#fff; background:rgba(255,255,255,0.05);
+    border:none; border-radius:12px; cursor:pointer; transition:0.2s;
+  }
+  .action-buttons button:hover { background:rgba(255,69,0,0.8); transform:scale(1.05); }
+  .action-buttons i.material-icons { font-size:24px; margin-bottom:4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><img src="https://allrounderlive.pages.dev/logo.png" alt="Logo"></div>
+</header>
+
+<div class="player-wrapper">
+  <video id="player" playsinline controls></video>
+
+  <div class="action-buttons">
+    <button id="favBtn"><i class="material-icons">favorite_border</i>Favourite</button>
+    <button id="shareBtn"><i class="material-icons">share</i>Share</button>
+    <button id="watchMoreBtn"><i class="material-icons">play_circle_filled</i>Watch More</button>
+    <button id="joinNowBtn"><i class="material-icons">group</i>Join Now</button>
+  </div>
+
+  <div class="match-details" id="matchDetails">Loading match details...</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.0/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.min.js"></script>
+<script>
+  const playerElement = document.getElementById('player');
+  const matchDetailsDiv = document.getElementById('matchDetails');
+  const player = new Plyr(playerElement, { 
+    controls: ['play','progress','current-time','mute','volume','settings','fullscreen'],
+    settings: ['quality','speed','loop']
+  });
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const matchId = parseInt(urlParams.get('matchId'));
+
+  const favBtn = document.getElementById('favBtn');
+  const matchKey = `favMatch-${matchId}`; // unique key per match
+
+  function updateFavButton(){
+    const isFav = localStorage.getItem(matchKey) === 'true';
+    favBtn.innerHTML = isFav 
+      ? '<i class="material-icons" style="color:red">favorite</i>Favourite'
+      : '<i class="material-icons">favorite_border</i>Favourite';
+  }
+
+  async function loadMatch() {
+    try {
+      const res = await fetch('https://raw.githubusercontent.com/Odfinity/live-events/refs/heads/main/fancode/data.json');
+      const data = await res.json();
+      if (!data.matches[matchId]) {
+        matchDetailsDiv.innerHTML = '<p style="color:red;">Match not found.</p>';
+        return;
+      }
+
+      const match = data.matches[matchId];
+      const videoSrc = match.src;
+
+      if (Hls.isSupported()) {
+        const hls = new Hls();
+        hls.loadSource(videoSrc);
+        hls.attachMedia(playerElement);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          const levels = hls.levels.map(l => l.height);
+          player.options.quality = { default: levels[levels.length-1], options: levels, forced: true, onChange: (q) => {
+            const levelIndex = levels.indexOf(q);
+            hls.currentLevel = levelIndex;
+          }};
+          player.play();
+        });
+      } else if (playerElement.canPlayType('application/vnd.apple.mpegurl')) {
+        playerElement.src = videoSrc;
+      }
+
+      matchDetailsDiv.innerHTML = `
+        <p><strong>${match.team_1}</strong> vs <strong>${match.team_2}</strong>
+        ${match.status.toLowerCase() === 'live' ? '<span class="live-badge">LIVE</span>' : ''}</p>
+        <p>Event: ${match.event_name}</p>
+        <p>Status: ${match.status}</p>
+        <p>Start: ${match.startTime}</p>
+      `;
+
+      // Initialize favourite button state
+      updateFavButton();
+
+    } catch(err) {
+      matchDetailsDiv.innerHTML = '<p style="color:red;">Failed to load match details.</p>';
+    }
+  }
+
+  // Header scroll effect
+  const header = document.querySelector('header');
+  window.addEventListener('scroll', () => {
+    if(window.scrollY > 50) header.classList.add('scrolled'); 
+    else header.classList.remove('scrolled');
+  });
+
+  loadMatch();
+
+  // Favourite toggle
+  favBtn.addEventListener('click', () => {
+    const isFav = localStorage.getItem(matchKey) === 'true';
+    localStorage.setItem(matchKey, !isFav);
+    updateFavButton();
+  });
+
+  // Share button
+  document.getElementById('shareBtn').addEventListener('click', async () => {
+    if(navigator.share){
+      navigator.share({
+        title: 'Watch this match',
+        text: 'Check out this match!',
+        url: window.location.href
+      });
+    } else {
+      alert('Share not supported on this browser.');
+    }
+  });
+
+  // Watch More
+  document.getElementById('watchMoreBtn').addEventListener('click', () => {
+    window.open('https://allrounderlive.pages.dev/','_blank');
+  });
+
+  // Join Now
+  document.getElementById('joinNowBtn').addEventListener('click', () => {
+    window.open('https://t.me/+KOnGKXbcSBszNWY1','_blank');
+  });
+
+</script>
+</body>
+</html>
