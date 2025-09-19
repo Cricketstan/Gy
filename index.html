@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fancode Live Matches</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { 
+    font-family: Arial, sans-serif; 
+    background: #0b0c10; 
+    color: #fff; 
+    margin:0; 
+    padding:0;
+}
+
+h2 { 
+    color:#ff4500; 
+    margin:15px 0 5px 15px; 
+}
+
+.scroll-container {
+    display:flex; 
+    overflow-x:auto; 
+    gap:15px; 
+    padding:10px 0 20px 0;
+    scroll-behavior: smooth;
+    -ms-overflow-style:none;  /* IE and Edge */
+    scrollbar-width:none;  /* Firefox */
+}
+.scroll-container::-webkit-scrollbar { display:none; } /* Chrome, Safari */
+
+.card {
+    position:relative; 
+    min-width:220px; 
+    border-radius:12px;
+    overflow:hidden; 
+    flex-shrink:0; 
+    cursor:pointer; 
+    box-shadow:0 4px 10px rgba(0,0,0,0.3);
+}
+
+.card img { 
+    width:100%; 
+    height:180px; 
+    object-fit:cover; 
+    display:block; 
+}
+
+.card-title {
+    position:absolute; 
+    bottom:0; 
+    left:0; 
+    right:0;
+    background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+    padding:8px; 
+    font-size:0.9rem; 
+    font-weight:bold; 
+    color:#fff;
+    white-space: nowrap; 
+    overflow: hidden; 
+    text-overflow: ellipsis;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); box-shadow: 0 0 6px rgba(255,0,0,0.8); }
+  50% { transform: scale(1.1); box-shadow: 0 0 14px rgba(255,0,0,1); }
+  100% { transform: scale(1); box-shadow: 0 0 6px rgba(255,0,0,0.8); }
+}
+
+.live-badge {
+    position:absolute; 
+    top:8px; 
+    left:8px; 
+    background:red;
+    color:#fff; 
+    padding:4px 8px; 
+    font-size:0.85rem; 
+    font-weight:bold;
+    text-transform: uppercase;
+    border-radius:4px;
+    animation: pulse 1.2s infinite;
+}
+
+.premium-badge {
+    position:absolute; 
+    top:8px; 
+    right:8px;
+    color:#ffd700; 
+    font-weight:900; 
+    padding:2px 6px; 
+    font-size:0.8rem;
+    text-shadow: 0 0 6px #ffd700, 0 0 10px #ffae00;
+    border-radius:4px; 
+    background:rgba(255,255,255,0.05);
+}
+
+.view-all-card {
+    min-width:100px; 
+    display:flex; 
+    align-items:center; 
+    justify-content:center;
+    background:#ff4500; 
+    border-radius:12px; 
+    font-weight:bold; 
+    color:#fff; 
+    cursor:pointer; 
+    flex-shrink:0;
+    font-size:0.9rem;
+}
+</style>
+</head>
+<body>
+
+<h2>Fancode Live</h2>
+<div class="scroll-container" id="matchesContainer"></div>
+
+<script>
+const matchesContainer = document.getElementById('matchesContainer');
+let allMatches = [];
+let showingAll = false;
+
+// Fetch match data
+async function loadMatches() {
+  try {
+    const res = await fetch('https://raw.githubusercontent.com/Odfinity/live-events/refs/heads/main/fancode/data.json');
+    const data = await res.json();
+    allMatches = data.matches;
+    renderMatches();
+  } catch(err) {
+    matchesContainer.innerHTML = "<p style='color:red; margin-left:15px;'>Failed to load matches.</p>";
+  }
+}
+
+// Render matches
+function renderMatches() {
+  matchesContainer.innerHTML = '';
+  const matchesToShow = showingAll ? allMatches : allMatches.slice(0,10);
+
+  matchesToShow.forEach((match,index)=>{
+    const card = document.createElement('div');
+    card.className = 'card';
+    if(index===0) card.style.marginLeft='15px'; // First card touches left
+
+    const isLive = match.status.toLowerCase() === 'live';
+    const isPremium = match.premium; // Assuming JSON has "premium": true/false
+
+    card.innerHTML = `
+      <img src="${match.src}" alt="${match.match_name}">
+      ${isLive ? '<div class="live-badge">LIVE</div>' : ''}
+      ${isPremium ? '<div class="premium-badge">PREMIUM</div>' : ''}
+      <div class="card-title">${match.match_name}</div>
+    `;
+
+    card.addEventListener('click', ()=>{
+      if(isLive || match.status.toLowerCase()!=='upcoming'){
+        window.location.href = `player.html?matchId=${index}`;
+      } else {
+        alert(`Match starts at ${match.startTime} IST. Check back later.`);
+      }
+    });
+    matchesContainer.appendChild(card);
+  });
+
+  if(allMatches.length > 10){
+    const viewAll = document.createElement('div');
+    viewAll.className='view-all-card';
+    viewAll.textContent = showingAll ? 'Show Less' : 'View All';
+    viewAll.addEventListener('click', ()=>{
+      showingAll = !showingAll;
+      renderMatches();
+    });
+    matchesContainer.appendChild(viewAll);
+  }
+}
+
+loadMatches();
+</script>
+
+</body>
+</html>
